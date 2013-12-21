@@ -85,7 +85,7 @@ class CointipBot(object):
         conf = {}
         try:
             prefix='./conf/'
-            for i in ['coins', 'db', 'exchanges', 'fiat', 'logs', 'misc', 'reddit', 'regex']:
+            for i in ['coins', 'db', 'exchanges', 'fiat', 'keywords', 'logs', 'misc', 'reddit', 'regex']:
                 lg.debug("CointipBot::parse_config(): reading %s%s.yml", prefix, i)
                 conf[i] = yaml.load(open(prefix+i+'.yml'))
         except yaml.YAMLError as e:
@@ -103,7 +103,7 @@ class CointipBot(object):
         """
         lg.debug('CointipBot::connect_db(): connecting to database...')
 
-        dsn = "mysql+mysqldb://%s:%s@%s:%s/%s" % (self.conf.db.auth.user, self.conf.db.auth.password, self.conf.db.auth.host, self.conf.db.auth.port, self.conf.db.auth.dbname)
+        dsn = "mysql+mysqldb://%s:%s@%s:%s/%s?charset=utf8" % (self.conf.db.auth.user, self.conf.db.auth.password, self.conf.db.auth.host, self.conf.db.auth.port, self.conf.db.auth.dbname)
         dbobj = ctb_db.CointipBotDatabase(dsn)
 
         try:
@@ -204,6 +204,12 @@ class CointipBot(object):
                     continue
 
                 lg.info("CointipBot::check_inbox(): %s from %s", "comment" if m.was_comment else "message", m.author.name)
+
+                # Ignore duplicate messages (sometimes Reddit fails to mark messages as read)
+                if ctb_action.check_action(msg_id=m.id, ctb=self):
+                    lg.warning("CointipBot::check_inbox(): duplicate action detected (msg.id %s), ignoring", m.id)
+                    ctb_misc.praw_call(m.mark_as_read)
+                    continue
 
                 # Ignore self messages
                 if m.author and m.author.name.lower() == self.conf.reddit.auth.user.lower():
@@ -328,6 +334,11 @@ class CointipBot(object):
                 if c.created_utc > updated_last_processed_time:
                     updated_last_processed_time = c.created_utc
 
+                # Ignore duplicate comments (may happen when bot is restarted)
+                if ctb_action.check_action(msg_id=c.id, ctb=self):
+                    lg.warning("CointipBot::check_inbox(): duplicate action detected (comment.id %s), ignoring", c.id)
+                    continue
+
                 # Ignore comments from banned users
                 if c.author and self.conf.reddit.banned_users:
                     lg.debug("CointipBot::check_subreddits(): checking whether user '%s' is banned..." % c.author)
@@ -442,7 +453,12 @@ class CointipBot(object):
         """
         Quick method to return _fiat value of _coin
         """
-        return self.runtime['ev'][_coin]['btc'] * self.runtime['ev']['btc'][_fiat]
+        try:
+            value = self.runtime['ev'][_coin]['btc'] * self.runtime['ev']['btc'][_fiat]
+        except KeyError as e:
+            lg.warning("CointipBot::coin_value(%s, %s): KeyError", _coin, _fiat)
+            value = 0.0
+        return value
 
     def notify(self, _msg=None):
         """

@@ -13,15 +13,25 @@
 {%   set arrow_fmt = " ^[->](%s%s)" % (ex.transaction, a.txid) %}
 {% endif %}
 {% if a.coinval: %}
-{%   set coin_amount = a.coinval %}
+{%   if a.coinval < 1.0 %}
+{%     set coin_amount = ( a.coinval * 1000.0 ) %}
+{%     set amount_prefix_short = "m" %}
+{%     set amount_prefix_long = "milli" %}
+{%   elif a.coinval >= 1000.0 %}
+{%     set coin_amount = ( a.coinval / 1000.0 ) %}
+{%     set amount_prefix_short = "M" %}
+{%     set amount_prefix_long = "Mega" %}
+{%   else %}
+{%     set coin_amount = a.coinval %}
+{%   endif %}
 {%   set coin_name = ctb.conf.coins[a.coin].name %}
 {%   set coin_symbol = ctb.conf.coins[a.coin].symbol %}
-{%   set coin_amount_fmt = " __^%s%.7g ^%s(s)__" % (coin_symbol, coin_amount, coin_name) %}
+{%   set coin_amount_fmt = " __^%s%s%.6g ^%s%ss__" % (amount_prefix_short, coin_symbol, coin_amount, amount_prefix_long, coin_name) %}
 {% endif %}
 {% if a.fiatval: %}
 {%   set fiat_amount = a.fiatval %}
 {%   set fiat_symbol = ctb.conf.fiat[a.fiat].symbol %}
-{%   set fiat_amount_fmt = "&nbsp;^__(%s%.6g)__" % (fiat_symbol, fiat_amount) %}
+{%   set fiat_amount_fmt = "&nbsp;^__(%s%.3f)__" % (fiat_symbol, fiat_amount) %}
 {% endif %}
 {% if ctb.conf.reddit.stats.enabled: %}
 {%   set stats_user_from_fmt = " ^^[[stats]](%s_%s)" % (ctb.conf.reddit.stats.url, a.u_from.name) %}
@@ -30,5 +40,24 @@
 {% if ctb.conf.reddit.help.enabled: %}
 {%   set help_link_fmt = " ^[[help]](%s)" % ctb.conf.reddit.help.url %}
 {% endif %}
-{% include "coins/"+a.coin+"/confirmation.tpl" ignore missing %}
-{{ title_fmt }}{{ user_from_fmt }}{{ stats_user_from_fmt }}{{ arrow_fmt }}{{ user_to_fmt }}{{ stats_user_to_fmt }}{{ coin_amount_fmt }}{{ fiat_amount_fmt }}{{ help_link_fmt }}{{ stats_link_fmt }}
+{% if a.keyword and ctb.conf.keywords[a.keyword].message %}
+{%   set txt = ctb.conf.keywords[a.keyword].message %}
+{%   if stats_user_from_fmt %}
+{%     set txt = txt | replace("{USER_FROM}", user_from_fmt + stats_user_from_fmt) %}
+{%   else %}
+{%     set txt = txt | replace("{USER_FROM}", user_from_fmt) %}
+{%   endif %}
+{%   if stats_user_to_fmt %}
+{%     set txt = txt | replace("{USER_TO}", user_to_fmt + stats_user_to_fmt) %}
+{%   else %}
+{%     set txt = txt | replace("{USER_TO}", user_to_fmt) %}
+{%   endif %}
+{%   if fiat_amount_fmt %}
+{%     set txt = txt | replace("{AMOUNT}", coin_amount_fmt + fiat_amount_fmt) %}
+{%   else %}
+{%     set txt = txt | replace("{AMOUNT}", coin_amount_fmt) %}
+{%   endif %}
+{{   txt }}
+{% else %}
+{{   title_fmt }}{{ user_from_fmt }}{{ stats_user_from_fmt }}{{ arrow_fmt }}{{ user_to_fmt }}{{ stats_user_to_fmt }}{{ coin_amount_fmt }}{{ fiat_amount_fmt }}{{ help_link_fmt }}{{ stats_link_fmt }}
+{% endif %}
