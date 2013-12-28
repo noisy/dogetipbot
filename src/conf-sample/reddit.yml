@@ -23,6 +23,7 @@ messages:
     sorry: true
 
 redeem:
+    enabled: false
     unit: 'usd'
     multicoin: true
     min_karma: 150

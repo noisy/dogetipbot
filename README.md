@@ -1,12 +1,18 @@
-# Reddit ALTcointip bot
+# It's dogetipbot!
 
 ## Introduction
 
-For introduction to and use of ALTcointip bot, see __http://www.reddit.com/r/ALTcointip/wiki/index__
+dogetipbot is a fork of vindimy's ALTcointip bot, found at __https://github.com/vindimy/altcointip__
 
-## Getting Started
+This is the version that's currently running on reddit at __http://www.reddit.com/r/dogetipbot/wiki/index__ 
 
->**NEW: See [altcointip-chef](https://github.com/vindimy/altcointip-chef) for Chef-automated installation and configuration of ALTcointip bot.**
+v2 is being developed, but this is stable (for now). only minor patches will be added on to this repo as bugs are squashed.
+
+note that this bot only accepts dogecoins.
+
+The instructions below are from ALTcointip, but the instructions are the same. Cheers!
+
+## ALTCointip Getting Started Instructions
 
 ### Python Dependencies
 
@@ -26,7 +32,7 @@ Create a new MySQL database instance and run included SQL file [altcointip.sql](
 
 ### Coin Daemons
 
-Download one or more coin daemon executable. Create a configuration file for it in appropriate directory (such as `~/.mycoin/mycoin.conf` for Litecoin), specifying `rpcuser`, `rpcpassword`, `rpcport`, and `server=1`, then start the daemon. It will take some time for the daemon to download the blockchain, after which you should verify that it's accepting commands (such as `mycoind getinfo` and `mycoind listaccounts`).
+Download one or more coin daemon executable. Create a configuration file for it in appropriate directory (such as `~/.dogecoin/dogecoin.conf` for Litecoin), specifying `rpcuser`, `rpcpassword`, `rpcport`, and `server=1`, then start the daemon. It will take some time for the daemon to download the blockchain, after which you should verify that it's accepting commands (such as `dogecoind getinfo` and `dogecoind listaccounts`).
 
 ### Reddit Account
 

@@ -549,15 +549,16 @@ class CointipBot(object):
                 # Refresh exchange rate values
                 self.refresh_ev()
 
+                # Expire pending tips first. fuck waiting for this shit.
+                self.expire_pending_tips()
+
                 # Check personal messages
                 self.check_inbox()
 
-                # Expire pending tips
-                self.expire_pending_tips()
-
                 # Check subreddit comments for tips
-                if self.conf.reddit.scan.my_subreddits or hasattr(self.conf.reddit.scan, 'these_subreddits'):
-                    self.check_subreddits()
+                # or not. fuck that. u mentions only
+#                if self.conf.reddit.scan.my_subreddits or hasattr(self.conf.reddit.scan, 'these_subreddits'):
+#                    self.check_subreddits()
 
                 # Sleep
                 lg.debug("CointipBot::main(): sleeping for %s seconds...", self.conf.misc.times.sleep_seconds)

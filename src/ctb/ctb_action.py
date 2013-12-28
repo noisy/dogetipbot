@@ -45,8 +45,12 @@ class CtbAction(object):
 
     msg=None            # Reddit object pointing to originating message/comment
     ctb=None            # CointipBot instance
+    
+    deleted_msg_id=None	        # Used for accepting tips if the original message was deleted
+    deleted_created_utc=None    # Used for accepting tips if the original message was deleted
 
-    def __init__(self, atype=None, msg=None, from_user=None, to_user=None, to_addr=None, coin=None, fiat=None, coin_val=None, fiat_val=None, keyword=None, subr=None, ctb=None):
+
+    def __init__(self, atype=None, msg=None, deleted_msg_id=None, deleted_created_utc=None, from_user=None, to_user=None, to_addr=None, coin=None, fiat=None, coin_val=None, fiat_val=None, subr=None, ctb=None, keyword=None):
         """
         Initialize CtbAction object with given parameters and run basic checks
         """
@@ -62,6 +66,8 @@ class CtbAction(object):
 
         self.msg = msg
         self.ctb = ctb
+        self.deleted_msg_id = deleted_msg_id
+        self.deleted_created_utc = deleted_created_utc
 
         self.addr_to = to_addr
         self.u_to = ctb_user.CtbUser(name=to_user, ctb=ctb) if to_user else None
@@ -73,8 +79,8 @@ class CtbAction(object):
             raise Exception("CtbAction::__init__(type=?): type not set")
         if not self.ctb:
             raise Exception("CtbAction::__init__(type=%s): no reference to CointipBot", self.type)
-        if not self.msg:
-            raise Exception("CtbAction::__init__(type=%s): no reference to Reddit message/comment", self.type)
+#        if not self.msg:
+#            raise Exception("CtbAction::__init__(type=%s): no reference to Reddit message/comment", self.type)
         if self.type in ['givetip', 'withdraw']:
             if not (bool(self.u_to) ^ bool(self.addr_to)):
                 raise Exception("CtbAction::__init__(atype=%s, from_user=%s): u_to xor addr_to must be set" % (self.type, self.u_from.name))
@@ -206,6 +212,16 @@ class CtbAction(object):
             self.coinval = 0.0
         if self.fiatval < 0.0:
             self.fiatval = 0.0
+        
+        realutc = None
+        realmsgid = None
+        
+        if self.msg:
+            realmsgid=self.msg.id
+            realutc=self.msg.created_utc
+        else:
+            realmsgid=self.deleted_msg_id;
+            realutc=self.deleted_created_utc;		
 
         conn = self.ctb.db
         sql = "REPLACE INTO t_action (type, state, created_utc, from_user, to_user, to_addr, coin_val, fiat_val, txid, coin, fiat, subreddit, msg_id, msg_link)"
@@ -215,7 +231,7 @@ class CtbAction(object):
             mysqlexec = conn.execute(sql,
                     (self.type,
                      state,
-                     self.msg.created_utc,
+                     realutc,
                      self.u_from.name.lower(),
                      self.u_to.name.lower() if self.u_to else None,
                      self.addr_to,
@@ -225,7 +241,7 @@ class CtbAction(object):
                      self.coin,
                      self.fiat,
                      self.subreddit,
-                     self.msg.id,
+                     realmsgid,
                      self.msg.permalink if hasattr(self.msg, 'permalink') else None))
             if mysqlexec.rowcount <= 0:
                 raise Exception("query didn't affect any rows")
@@ -243,7 +259,7 @@ class CtbAction(object):
                 self.coin,
                 self.fiat,
                 self.subreddit,
-                self.msg.id,
+                realmsgid,
                 self.msg.permalink if hasattr(self.msg, 'permalink') else None), e)
             raise
 
@@ -566,9 +582,15 @@ class CtbAction(object):
         Initiate tip
         """
         lg.debug("> CtbAction::givetip()")
-
+        
+        if self.msg:
+        	my_id=self.msg.id
+        else:
+        	my_id=self.deleted_msg_id
+        	deleted_created_utc=self.deleted_created_utc
+        	
         # Check if action has been processed
-        if check_action(atype=self.type, msg_id=self.msg.id, ctb=self.ctb, is_pending=is_pending):
+        if check_action(atype=self.type, msg_id=my_id, ctb=self.ctb, is_pending=is_pending):
             # Found action in database, returning
             lg.warning("CtbAction::givetipt(): duplicate action %s (msg.id %s), ignoring", self.type, self.msg.id)
             return False
@@ -609,9 +631,14 @@ class CtbAction(object):
             lg.debug("CtbAction::givetip(): " + msg)
             self.u_to.tell(subj="+tip received", msg=msg)
 
+            # Send confirmation to u_from
+            msg = self.ctb.jenv.get_template('tip-sent.tpl').render(a=self, ctb=self.ctb)
+            lg.debug("CtbAction::givetip(): " + msg)
+            self.u_from.tell(subj="+tip sent", msg=msg)
+
             # This is not accept() of pending transaction, so post verification comment
             if not is_pending:
-                msg = self.ctb.jenv.get_template('confirmation.tpl').render(title='Verified', a=self, ctb=self.ctb)
+                msg = self.ctb.jenv.get_template('confirmation.tpl').render(title='wow so verify', a=self, ctb=self.ctb)
                 lg.debug("CtbAction::givetip(): " + msg)
                 if self.ctb.conf.reddit.messages.verified:
                     if not ctb_misc.praw_call(self.msg.reply, msg):
@@ -644,7 +671,7 @@ class CtbAction(object):
             self.save('completed')
 
             # Post verification comment
-            msg = self.ctb.jenv.get_template('confirmation.tpl').render(title='Verified', a=self, ctb=self.ctb)
+            msg = self.ctb.jenv.get_template('confirmation.tpl').render(title='wow so verify', a=self, ctb=self.ctb)
             lg.debug("CtbAction::givetip(): " + msg)
             if self.ctb.conf.reddit.messages.verified:
                 if not ctb_misc.praw_call(self.msg.reply, msg):
@@ -989,6 +1016,7 @@ def eval_message(msg, ctb):
     lg.debug("> eval_message()")
 
     body = msg.body
+    #lg.info(vars(msg)) #debug
     for r in ctb.runtime['regex']:
 
         # Attempt a match
@@ -1004,6 +1032,10 @@ def eval_message(msg, ctb):
             to_addr = m.group(r.rg_address) if r.rg_address > 0 else None
             amount = m.group(r.rg_amount) if r.rg_amount > 0 else None
             keyword = m.group(r.rg_keyword) if r.rg_keyword > 0 else None
+            
+            if ((to_addr == None) and (r.action == 'givetip')):
+                lg.debug("eval_message(): can't tip with no to_addr")
+                return None
 
             # Return CtbAction instance with given variables
             return CtbAction(   atype=r.action,
@@ -1129,7 +1161,7 @@ def check_action(atype=None, state=None, coin=None, msg_id=None, created_utc=Non
     lg.warning("< check_action() DONE (should not get here)")
     return None
 
-def get_actions(atype=None, state=None, coin=None, msg_id=None, created_utc=None, from_user=None, to_user=None, subr=None, ctb=None):
+def get_actions(atype=None, state=None, deleted_msg_id=None, deleted_created_utc=None, coin=None, msg_id=None, created_utc=None, from_user=None, to_user=None, subr=None, ctb=None):
     """
     Return an array of CtbAction objects from database with given attributes
     """
@@ -1158,6 +1190,10 @@ def get_actions(atype=None, state=None, coin=None, msg_id=None, created_utc=None
             sql_terms.append("subreddit = '%s'" % subr)
         sql += ' AND '.join(sql_terms)
 
+#throttle ALL THE THINGS!
+#    if created_utc:
+#        sql += 'LIMIT 100'
+
     while True:
         try:
             r = []
@@ -1173,16 +1209,29 @@ def get_actions(atype=None, state=None, coin=None, msg_id=None, created_utc=None
 
                 # Get PRAW message (msg) and author (msg.author) objects
                 submission = ctb_misc.praw_call(ctb.reddit.get_submission, m['msg_link'])
+
                 msg = None
-                if not len(submission.comments) > 0:
-                    lg.warning("get_actions(): could not fetch msg (deleted?) from msg_link %s", m['msg_link'])
+                
+                if not submission:
+                    lg.warning("get_actions(): submission not found for %s . msgid %s", m['msg_link'], m['msg_id'])
+
                 else:
-                    msg = submission.comments[0]
-                    if not msg.author:
-                        lg.warning("get_actions(): could not fetch msg.author (deleted?) from msg_link %s", m['msg_link'])
+                    if not len(submission.comments) > 0:
+                        lg.warning("get_actions(): could not fetch msg (deleted?) from msg_link %s", m['msg_link'])
+                        lg.warning("get_actions(): setting deleted_msg_id %s", m['msg_id'])
+                        deleted_msg_id=m['msg_id']
+                        deleted_created_utc=m['created_utc']
+                    else:
+                        msg = submission.comments[0]
+                        if not msg.author:
+                            lg.warning("get_actions(): could not fetch msg.author (deleted?) from msg_link %s", m['msg_link'])
+                            lg.warning("get_actions(): setting msg.author to original tipper %s", m['from_user'])
+                        
 
                 r.append( CtbAction( atype=atype,
                                      msg=msg,
+                                     deleted_msg_id=deleted_msg_id,
+                                     deleted_created_utc=deleted_created_utc,
                                      from_user=m['from_user'],
                                      to_user=m['to_user'],
                                      to_addr=m['to_addr'] if not m['to_user'] else None,
