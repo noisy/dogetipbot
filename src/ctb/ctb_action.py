@@ -592,7 +592,7 @@ class CtbAction(object):
         # Check if action has been processed
         if check_action(atype=self.type, msg_id=my_id, ctb=self.ctb, is_pending=is_pending):
             # Found action in database, returning
-            lg.warning("CtbAction::givetipt(): duplicate action %s (msg.id %s), ignoring", self.type, self.msg.id)
+            lg.warning("CtbAction::givetipt(): duplicate action %s (msg.id %s), ignoring", self.type, my_id)
             return False
 
         # Validate action
@@ -1192,7 +1192,7 @@ def get_actions(atype=None, state=None, deleted_msg_id=None, deleted_created_utc
 
 #throttle ALL THE THINGS!
 #    if created_utc:
-#        sql += 'LIMIT 100'
+#        sql += ' LIMIT 100'
 
     while True:
         try:
