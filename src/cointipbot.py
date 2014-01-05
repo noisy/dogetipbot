@@ -26,6 +26,8 @@ from requests.exceptions import HTTPError, ConnectionError, Timeout
 from praw.errors import ExceptionList, APIException, InvalidCaptcha, InvalidUser, RateLimitExceeded
 from socket import timeout
 
+from wykopsdk.wykop import *
+
 # Configure CointipBot logger
 logging.basicConfig()
 lg = logging.getLogger('cointipbot')
@@ -39,6 +41,7 @@ class CointipBot(object):
     conf = None
     db = None
     reddit = None
+    wykop = None
     coins = {}
     exchanges = {}
     jenv = None
@@ -85,7 +88,7 @@ class CointipBot(object):
         conf = {}
         try:
             prefix='./conf/'
-            for i in ['coins', 'db', 'exchanges', 'fiat', 'keywords', 'logs', 'misc', 'reddit', 'regex']:
+            for i in ['coins', 'db', 'exchanges', 'fiat', 'keywords', 'logs', 'misc', 'reddit', 'wykop', 'regex']:
                 lg.debug("CointipBot::parse_config(): reading %s%s.yml", prefix, i)
                 conf[i] = yaml.load(open(prefix+i+'.yml'))
         except yaml.YAMLError as e:
@@ -122,10 +125,45 @@ class CointipBot(object):
         lg.debug('CointipBot::connect_reddit(): connecting to Reddit...')
 
         conn = praw.Reddit(user_agent = self.conf.reddit.auth.user)
+
+        class api_conn():
+            def __init__(self, conn):
+                self.conn = conn
+
+            def login(self, user, password):
+                return self.conn.login(user, password)
+
+            def get_unread(self, unset_has_mail=False, update_user=False, *args, **kwargs):
+                return self.conn.get_unread(unset_has_mail, update_user, *args, **kwargs)
+
+            def get_content(self, *args, **kwargs):
+                return self.conn.get_content(self, *args, **kwargs)
+
+
+        conn = api_conn(conn)
+
+
+
+
+        print str(dir(conn))
+
         conn.login(self.conf.reddit.auth.user, self.conf.reddit.auth.password)
 
         lg.info("CointipBot::connect_reddit(): logged in to Reddit as %s", self.conf.reddit.auth.user)
         return conn
+
+    def connect_wykop(self):
+        """
+        Returns a praw connection object
+        """
+        lg.debug('CointipBot::connect_wykop(): connecting to Wykop...')
+
+        conn = WykopAPI(self.conf.wykop.auth.appkey, self.conf.wykop.auth.secretkey)
+        conn.authenticate(self.conf.wykop.auth.user, self.conf.wykop.auth.accountkey)
+
+        lg.info("CointipBot::connect_wykop(): logged in to Wykop as %s", self.conf.wykop.auth.user)
+        return conn
+
 
     def self_checks(self):
         """
@@ -261,6 +299,138 @@ class CointipBot(object):
 
         lg.debug("< CointipBot::check_inbox() DONE")
         return True
+
+
+    def simplify(self, body):
+        #@<a href="@bitcoinbot">bitcoinbot</a>: hi!'
+        import re
+        return re.sub('@<a href="(@[a-zA-Z0-9]+)">[a-zA-Z0-9]+</a>', '\g<1>', body)
+
+
+    def check_wykop_inbox(self):
+        """
+        Evaluate new messages in inbox
+        """
+        lg.debug('> CointipBot::check_wykop_inbox()')
+
+        try:
+
+            messages = []
+
+            i = 1
+            while True:
+                m = [n for n in self.wykop.notifications(page=i) if n['new']]
+                if len(m) > 0:
+                    i+=1
+                    messages += m
+                else:
+                    break
+
+            # Try to fetch some messages
+            #messages.reverse()
+
+            # Process messages
+            for m in messages:
+                # Sometimes messages don't have an author (such as 'you are banned from' message)
+                if not m.author:
+                    lg.info("CointipBot::check_wykop_inbox(): ignoring msg with no author")
+                    self.wykop.notification_mark_as_read(m.id)
+                    continue
+
+                was_comment =m.type in ["link_comment_directed", "entry_comment_directed"]
+                was_entry_comment = m.type in ['entry_directed']
+                was_link_comment = m.type in ["link_comment_directed"]
+                was_pm = m.type in ['pm']
+
+                if m.type in ["link_comment_directed"]:
+                    m.comment = self.wykop.get_link_comment_by_id(m.link.id, m.comment.id)
+                    m.comment.body = self.simplify(m.comment.body)
+                if m.type in ["entry_comment_directed"]:
+                    m.comment.body = self.simplify(m.comment.body)
+                elif m.type == 'entry_directed':
+                    m.entry.body = self.simplify(m.entry.body)
+
+                lg.info("CointipBot::check_wykop_inbox(): %s from %s", "comment" if was_comment else ("entry" if was_entry_comment else "message"), m['author'])
+
+                # Ignore duplicate messages (sometimes Reddit fails to mark messages as read)
+                if ctb_action.check_action(msg_id=m.id, ctb=self):
+                    lg.warning("CointipBot::check_wykop_inbox(): duplicate action detected (msg.id %s), ignoring", m.id)
+                    self.wykop.notification_mark_as_read(m.id)
+                    continue
+
+                # Ignore self messages
+                if m.author and m.author == self.conf.wykop.auth.user:
+                    lg.debug("CointipBot::check_wykop_inbox(): ignoring message from self")
+                    self.wykop.notification_mark_as_read(m.id)
+                    continue
+
+                # Ignore messages from banned users
+                if m.author and self.conf.wykop.banned_users:
+                    lg.debug("CointipBot::check_wykop_inbox(): checking whether user '%s' is banned..." % m.author)
+                    u = ctb_user.CtbUser(name = m.author, ctb = self)
+                    if u.banned:
+                        lg.info("CointipBot::check_wykop_inbox(): ignoring banned user '%s'" % m.author)
+                        self.wykop.notification_mark_as_read(m.id)
+                        continue
+
+                action = None
+                if was_comment:
+                    # Attempt to evaluate as comment / mention
+
+                    action = ctb_action.eval_comment(m.comment, self)
+
+                elif was_entry_comment:
+                    pass
+                    #TODO!!!
+                elif was_pm:
+
+                    conversation = self.wykop.get_conversation(m.author)
+
+                    # Attempt to evaluate as inbox message
+
+                    #TODO: rozgryzc co z brakiem id wiadomosci z PM
+                    action = ctb_action.eval_message(conversation[0], self)
+
+
+
+                # Perform action, if found
+                if action:
+                    lg.info("CointipBot::check_wykop_inbox(): %s from %s (m.id %s)", action.type, action.u_from.name, m.id)
+                    lg.debug("CointipBot::check_wykop_inbox(): message body: <%s>", m.body)
+                    action.do()
+                else:
+                    lg.info("CointipBot::check_wykop_inbox(): no match")
+                    if self.conf.wykop.messages.sorry :#not m.subject in ['post reply', 'comment reply']:
+                        user = ctb_user.CtbUser(name=m.author, ctb=self)
+                        tpl = self.jenv.get_template('didnt-understand.tpl')
+
+                        msg = tpl.render(user_from=user.name, what='comment' if was_comment else 'message', source_link=None, ctb=self)
+                        lg.debug("CointipBot::check_wykop_inbox: %s", msg)
+
+                        #user.tell(subj='What?', msg=msg, msgobj=m if not m.was_comment else None)
+
+                        if was_pm:
+                            self.wykop.send_message(m.author, msg)
+                        elif was_entry_comment:
+                            self.wykop.add_entry_comment(m.comment.id, msg)
+                        elif was_link_comment:
+                            self.wykop.add_comment(m.link.id, m.comment.id, msg)
+
+
+                # Mark message as read
+                self.wykop.notification_mark_as_read(m.id)
+
+        except (HTTPError, ConnectionError, Timeout, RateLimitExceeded, timeout) as e:
+            lg.warning("CointipBot::check_wykop_inbox(): Wykop is down (%s), sleeping", e)
+            time.sleep(self.conf.misc.times.sleep_seconds)
+            pass
+        except Exception as e:
+            lg.error("CointipBot::check_wykop_inbox(): %s", e)
+            raise
+
+        lg.debug("< CointipBot::check_wykop_inbox() DONE")
+        return True
+
 
     def init_subreddits(self):
         """
@@ -519,6 +689,7 @@ class CointipBot(object):
         # Reddit
         if init_reddit:
             self.reddit = self.connect_reddit()
+            self.wykop = self.connect_wykop()
             self.init_subreddits()
             # Regex for Reddit messages
             ctb_action.init_regex(self)
@@ -554,6 +725,7 @@ class CointipBot(object):
 
                 # Check personal messages
                 self.check_inbox()
+                self.check_wykop_inbox()
 
                 # Check subreddit comments for tips
                 # or not. fuck that. u mentions only

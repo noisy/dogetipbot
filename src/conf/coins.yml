@@ -1,0 +1,22 @@
+# Dogecoin
+dog:
+    enabled: true
+    unit: dog
+    name: Dogecoin
+    symbol: 'Ð'
+    config_file: '~/.dogecoin/dogecoin.conf'
+    config_rpcserver: '127.0.0.1'
+    config_rpcport: 22555
+    minconf:
+        givetip: 4
+        withdraw: 60
+    txmin:
+        givetip: 5
+        withdraw: 1
+    txfee: 1
+    explorer:
+        address: 'http://dogechain.info/address/'
+        transaction: 'http://dogechain.info/tx/'
+    regex:
+        address: '(D[1-9a-z]{20,40})'
+        units: '(doge|dogecoin|dogecoins|doges|Ð|dog)'

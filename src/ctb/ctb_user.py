@@ -203,7 +203,9 @@ class CtbUser(object):
             ctb_misc.praw_call(msgobj.reply, msg)
         else:
             lg.debug("CtbUser::tell(%s): sending message", self.name)
-            ctb_misc.praw_call(self.prawobj.send_message, subj, msg)
+
+            self.ctb.wykop.send_message(self.name, msg)
+            #ctb_misc.praw_call(self.prawobj.send_message, subj, msg)
 
         lg.debug("< CtbUser::tell(%s) DONE", self.name)
         return True

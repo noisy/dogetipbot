@@ -71,7 +71,7 @@ class CtbAction(object):
 
         self.addr_to = to_addr
         self.u_to = ctb_user.CtbUser(name=to_user, ctb=ctb) if to_user else None
-        self.u_from = ctb_user.CtbUser(name=msg.author.name, redditobj=msg.author, ctb=ctb) if (msg and msg.author) else ctb_user.CtbUser(name=from_user, ctb=ctb)
+        self.u_from = ctb_user.CtbUser(name=msg.author, redditobj=msg.author, ctb=ctb) if (msg and msg.author) else ctb_user.CtbUser(name=from_user, ctb=ctb)
         self.subreddit = subr
 
         # Do some checks
@@ -90,9 +90,9 @@ class CtbAction(object):
                 raise Exception("CtbAction::__init__(atype=%s, from_user=%s): coinval or fiatval or keyword must be set" % (self.type, self.u_from.name))
 
         # Convert coinval and fiat to float, if necesary
-        if self.coinval and type(self.coinval) == unicode and self.coinval.replace('.', '').isnumeric():
+        if self.coinval and type(self.coinval) in [unicode, str] and unicode(self.coinval).replace('.', '').isnumeric():
             self.coinval = float(self.coinval)
-        if self.fiatval and type(self.fiatval) == unicode and self.fiatval.replace('.', '').isnumeric():
+        if self.fiatval and type(self.fiatval) in [unicode, str] and unicode(self.fiatval).replace('.', '').isnumeric():
             self.fiatval = float(self.fiatval)
 
         lg.debug("CtbAction::__init__(): %s", self)
@@ -218,7 +218,7 @@ class CtbAction(object):
         
         if self.msg:
             realmsgid=self.msg.id
-            realutc=self.msg.created_utc
+            realutc=self.msg.date
         else:
             realmsgid=self.deleted_msg_id;
             realutc=self.deleted_created_utc;		
@@ -1091,8 +1091,8 @@ def eval_comment(comment, ctb):
                     return None
 
             # Check if from_user == to_user
-            if u_to and comment.author.name.lower() == u_to.lower():
-                lg.warning("eval_comment(): comment.author.name == u_to, ignoring comment", comment.author.name)
+            if u_to and comment.author == u_to:
+                lg.warning("eval_comment(): comment.author == u_to, ignoring comment", comment.author)
                 return None
 
             # Return CtbAction instance with given variables
@@ -1107,7 +1107,7 @@ def eval_comment(comment, ctb):
                                 fiat=r.fiat,
                                 fiat_val=amount if r.fiat else None,
                                 keyword=keyword,
-                                subr=comment.subreddit,
+                                #subr=comment.subreddit,
                                 ctb=ctb)
 
     # No match found

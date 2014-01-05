@@ -59,6 +59,8 @@ def reddit_get_parent_author(comment, reddit, ctb):
     """
     lg.debug("> reddit_get_parent_author()")
 
+    return None
+
     while True:
 
         try:
