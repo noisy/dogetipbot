@@ -307,6 +307,88 @@ class CointipBot(object):
         return re.sub('@<a href="(@[a-zA-Z0-9]+)">[a-zA-Z0-9]+</a>', '\g<1>', body)
 
 
+    def check_wykop_inbox_2(self):
+        """
+        Evaluate new messages in inbox
+        """
+        lg.debug('> CointipBot::check_inbox()')
+
+        try:
+
+            # Try to fetch some messages
+            messages = [n.msg for n in ctb_misc.praw_call(self.wykop.get_unread_notifications)]
+            messages.reverse()
+
+            # Process messages
+            for m in messages:
+                # Sometimes messages don't have an author (such as 'you are banned from' message)
+                if not m.author:
+                    lg.info("CointipBot::check_inbox(): ignoring msg with no author")
+                    ctb_misc.praw_call(m.mark_as_read)
+                    continue
+
+
+
+                lg.info("CointipBot::check_inbox(): %s from %s", "comment" if m.was_comment else "message", m.author.name)
+
+                # Ignore duplicate messages (sometimes Reddit fails to mark messages as read)
+                if ctb_action.check_action(msg_id=m.id, ctb=self):
+                    lg.warning("CointipBot::check_inbox(): duplicate action detected (msg.id %s), ignoring", m.id)
+                    ctb_misc.praw_call(m.mark_as_read)
+                    continue
+
+                # Ignore self messages
+                if m.author and m.author.name.lower() == self.conf.reddit.auth.user.lower():
+                    lg.debug("CointipBot::check_inbox(): ignoring message from self")
+                    ctb_misc.praw_call(m.mark_as_read)
+                    continue
+
+                # Ignore messages from banned users
+                if m.author and self.conf.wykop.banned_users:
+                    lg.debug("CointipBot::check_inbox(): checking whether user '%s' is banned..." % m.author)
+                    u = ctb_user.CtbUser(name = m.author.name, redditobj = m.author, ctb = self)
+                    if u.banned:
+                        lg.info("CointipBot::check_inbox(): ignoring banned user '%s'" % m.author)
+                        ctb_misc.praw_call(m.mark_as_read)
+                        continue
+
+                action = None
+                if m.was_comment:
+                    # Attempt to evaluate as comment / mention
+                    action = ctb_action.eval_comment(m, self)
+                else:
+                    # Attempt to evaluate as inbox message
+                    action = ctb_action.eval_message(m, self)
+
+                # Perform action, if found
+                if action:
+                    lg.info("CointipBot::check_inbox(): %s from %s (m.id %s)", action.type, action.u_from.name, m.id)
+                    lg.debug("CointipBot::check_inbox(): message body: <%s>", m.body)
+                    action.do()
+                else:
+                    lg.info("CointipBot::check_inbox(): no match")
+                    if self.conf.wykop.messages.sorry:
+                        user = ctb_user.CtbUser(name=m.author.name, redditobj=m.author, ctb=self)
+                        tpl = self.jenv.get_template('didnt-understand.tpl')
+                        msg = tpl.render(user_from=user.name, what='comment' if m.was_comment else 'message', source_link=m.permalink if hasattr(m, 'permalink') else None, ctb=self)
+                        lg.debug("CointipBot::check_inbox(): %s", msg)
+                        user.tell(subj='What?', msg=msg, msgobj=m if not m.was_comment else None)
+
+                # Mark message as read
+                ctb_misc.praw_call(m.mark_as_read)
+
+        except (HTTPError, ConnectionError, Timeout, RateLimitExceeded, timeout) as e:
+            lg.warning("CointipBot::check_inbox(): Reddit is down (%s), sleeping", e)
+            time.sleep(self.conf.misc.times.sleep_seconds)
+            pass
+        except Exception as e:
+            lg.error("CointipBot::check_inbox(): %s", e)
+            raise
+
+        lg.debug("< CointipBot::check_inbox() DONE")
+        return True
+
+
     def check_wykop_inbox(self):
         """
         Evaluate new messages in inbox
@@ -315,19 +397,8 @@ class CointipBot(object):
 
         try:
 
-            messages = []
-
-            i = 1
-            while True:
-                m = [n for n in self.wykop.notifications(page=i) if n['new']]
-                if len(m) > 0:
-                    i+=1
-                    messages += m
-                else:
-                    break
-
-            # Try to fetch some messages
-            #messages.reverse()
+            messages = self.wykop.notifications_new()
+            messages.reverse()
 
             # Process messages
             for m in messages:
@@ -724,8 +795,8 @@ class CointipBot(object):
                 self.expire_pending_tips()
 
                 # Check personal messages
-                self.check_inbox()
-                self.check_wykop_inbox()
+                #self.check_inbox()
+                self.check_wykop_inbox_2()
 
                 # Check subreddit comments for tips
                 # or not. fuck that. u mentions only

@@ -55,17 +55,13 @@ class CtbUser(object):
             self.prawobj = redditobj
 
         # Determine if user is banned
-        if ctb.conf.reddit.banned_users:
-            if ctb.conf.reddit.banned_users.method == 'subreddit':
-                for u in ctb.reddit.get_banned(ctb.conf.reddit.banned_users.subreddit):
-                    if self.name.lower() == u.name.lower():
-                        self.banned = True
-            elif ctb.conf.reddit.banned_users.method == 'list':
-                for u in ctb.conf.reddit.banned_users.list:
+        if ctb.conf.wykop.banned_users:
+            if ctb.conf.wykop.banned_users.method == 'list':
+                for u in ctb.conf.wykop.banned_users.list:
                     if self.name.lower() == u.lower():
                         self.banned = True
             else:
-                lg.warning("CtbUser::__init__(): invalid method '%s' in banned_users config" % ctb.conf.reddit.banned_users.method)
+                lg.warning("CtbUser::__init__(): invalid method '%s' in banned_users config" % ctb.conf.wykop.banned_users.method)
 
         lg.debug("< CtbUser::__init__(%s) DONE", name)
 
@@ -115,7 +111,7 @@ class CtbUser(object):
         lg.debug("< CtbUser::get_addr(%s, %s) DONE (should never happen)", self.name, coin)
         return None
 
-    def is_on_reddit(self):
+    def is_on_wykop(self):
         """
         Return true if username exists Reddit. Also set prawobj pointer while at it.
         """
@@ -127,7 +123,7 @@ class CtbUser(object):
             return True
 
         try:
-            self.prawobj = ctb_misc.praw_call(self.ctb.reddit.get_redditor, self.name)
+            self.prawobj = ctb_misc.praw_call(self.ctb.wykop.get_profile, self.name)
             if self.prawobj:
                 return True
             else:
@@ -195,7 +191,7 @@ class CtbUser(object):
         if not bool(subj) or not bool(msg):
             raise Exception("CtbUser::tell(%s): subj or msg not set", self.name)
 
-        if not self.is_on_reddit():
+        if not self.is_on_wykop():
             raise Exception("CtbUser::tell(%s): not a Reddit user", self.name)
 
         if bool(msgobj):
@@ -204,8 +200,7 @@ class CtbUser(object):
         else:
             lg.debug("CtbUser::tell(%s): sending message", self.name)
 
-            self.ctb.wykop.send_message(self.name, msg)
-            #ctb_misc.praw_call(self.prawobj.send_message, subj, msg)
+            ctb_misc.praw_call(self.prawobj.send_message, msg)
 
         lg.debug("< CtbUser::tell(%s) DONE", self.name)
         return True

@@ -71,7 +71,7 @@ class CtbAction(object):
 
         self.addr_to = to_addr
         self.u_to = ctb_user.CtbUser(name=to_user, ctb=ctb) if to_user else None
-        self.u_from = ctb_user.CtbUser(name=msg.author, redditobj=msg.author, ctb=ctb) if (msg and msg.author) else ctb_user.CtbUser(name=from_user, ctb=ctb)
+        self.u_from = ctb_user.CtbUser(name=msg.author.name, redditobj=msg.author, ctb=ctb) if (msg and msg.author) else ctb_user.CtbUser(name=from_user, ctb=ctb)
         self.subreddit = subr
 
         # Do some checks
@@ -468,7 +468,7 @@ class CtbAction(object):
                 self.save('failed')
                 return False
 
-            if self.u_to and not self.u_to.is_on_reddit():
+            if self.u_to and not self.u_to.is_on_wykop():
                 msg = self.ctb.jenv.get_template('not-on-reddit.tpl').render(a=self, ctb=self.ctb)
                 lg.debug("CtbAction::validate(): %s", msg)
                 self.u_from.tell(subj="+tip failed", msg=msg)
